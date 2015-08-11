@@ -1,0 +1,138 @@
+<?php
+
+/**
+ * @file
+ * custom alters to the user profile form
+ */
+
+/**
+ * Implements hook_menu_alter()
+ */
+function custom_user_menu_alter(&$items) {
+  $items['user']['title callback'] = 'custom_user_user_menu_title';
+}
+
+/**
+ * Implements hook_user_login()
+ * Get resident information at Login
+ */
+function custom_user_user_login(&$edit, $account) {
+
+  if ((!isset($account->field_dob[LANGUAGE_NONE]) || is_null($account->field_dob[LANGUAGE_NONE][0]['value'])) 
+    || (!isset($account->field_cbord_id[LANGUAGE_NONE]) || is_null($account->field_cbord_id[LANGUAGE_NONE][0]['value'])) 
+    || is_null($account->picture)) {
+
+    $resident = custom_user_get_rinfo($account->name);
+
+    if ($resident) {
+      $account->field_dob[LANGUAGE_NONE][0]['value'] = $resident['dob'];
+      $account->field_cbord_id[LANGUAGE_NONE][0]['value'] = $resident['uuid'];
+
+      if (is_null($account->picture) && $resident['uuid']) {
+        $account->picture = dashboard_picture_from_starrez($resident['entryid'], $resident['uuid']);
+      }
+    }
+
+    $account = user_save($account);
+  }
+
+}
+
+/**
+ * Function to change the user menu to include the first name of logged in user
+ */
+function custom_user_user_menu_title() {
+  global $user;
+
+  $account = user_load($user->uid);
+
+  if (user_is_logged_in()) {
+    if (isset($account->field_first_name[LANGUAGE_NONE])) {
+      $name = $account->field_first_name[LANGUAGE_NONE][0]['value'];
+    } else {
+      $name = $user->name;
+    }
+  }
+
+  return user_is_logged_in() ? t('WELCOME, ' . strtoupper($name)) : t('LOG IN');
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter()
+ */
+function custom_user_form_user_profile_form_alter(&$form, &$form_state, $form_id) {
+
+  // Set organization_block title from Department
+	$form['field_business_address'][LANGUAGE_NONE][0]['organisation_block']['organisation_name']['#title'] = t('Department');
+
+  // Set premise title to Office Number
+	$form['field_business_address'][LANGUAGE_NONE][0]['street_block']['premise']['#title'] = t('Office Number');
+
+}
+
+// Get resident information, ie: UUID and DOB from StarRez
+function custom_user_get_rinfo($identikey) {
+
+  // Identify REST call report and parameters to send
+  $service_fragment = "select/entry.json";
+  $parameters = array(
+    "id2=" . $identikey,
+  );
+
+  $student = myroom_starrez_client($service_fragment, $parameters);
+
+  if (isset($student)) {
+    $uuid = $student[0]->ID3;
+    $dob = $student[0]->DOB;
+    $entryid = $student[0]->EntryID;
+  } else {
+    return;
+  }
+
+  return array('uuid'=>$uuid, 'dob'=>$dob, 'entryid'=>$entryid);
+
+}
+
+//Get resident mailbox information, if it exists.
+function custom_user_get_mailbox($identikey) {
+
+  // Identify REST call report and parameters to send
+  $service_fragment = "getreport/OnCampusReport.json";
+  $parameters = array(
+    "identikey=" . $identikey,
+  );
+
+  $student = myroom_starrez_client($service_fragment, $parameters);
+
+  if (isset($student)) {
+    return $mailbox = $student[0]->Mail_Box;
+  } else {
+    return;
+  }
+
+}
+
+/**
+ * Implements hook_views_pre_render()
+ */
+function custom_user_views_pre_render(&$view) {
+  // Set HD report to show first and last names, instead of identikey, when available.
+  if ($view->name == 'myroom_admin_facility_staff_report_ac' && ($view->current_display == 'page_2')){
+    foreach($view->result as $r => $result){
+      if ($view->result[$r]->field_field_mr_res_adv[0]['raw']['entity']->field_first_name[LANGUAGE_NONE]) {
+        $view->result[$r]->field_field_mr_res_adv[0]['rendered']['#markup'] = $view->result[$r]->field_field_mr_res_adv[0]['raw']['entity']->field_first_name[LANGUAGE_NONE][0]['value'] . ' ' . $view->result[$r]->field_field_mr_res_adv[0]['raw']['entity']->field_last_name[LANGUAGE_NONE][0]['value'] ;
+      }
+    }
+  }
+
+  // Set AC report to show first and last name of HD, when available.
+  if ($view->name == 'myroom_admin_facility_staff_report_ac' && ($view->current_display == 'page')) {
+    foreach ($view->result as $r => $result) {
+      if ($view->result[$r]->field_field_mrf_staff_user[0]['raw']['entity']->field_first_name[LANGUAGE_NONE]) {
+        $view->result[$r]->myroom_staff_item_field_data_field_mrf_children_title =
+          $view->result[$r]->field_field_mrf_staff_user[0]['raw']['entity']->field_first_name[LANGUAGE_NONE][0]['value'] . ' ' . $view->result[$r]->field_field_mrf_staff_user[0]['raw']['entity']->field_last_name[LANGUAGE_NONE][0]['value'];
+      }
+    }
+  }
+}
+

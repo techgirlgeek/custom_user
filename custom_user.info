@@ -1,0 +1,4 @@
+name = Custom User Module
+description = Custom code for altering the user profile form on the site
+core = 7.x
+package = OnCampus
